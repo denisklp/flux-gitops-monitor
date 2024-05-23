@@ -18,3 +18,8 @@ spec:
     name: kbot-secret
     valuesKey: token
     targetPath: secret.tokenValue
+  values:
+    env:
+      metrics_host: "otel-collector-opentelemetry-collector.monitoring.svc.cluster.local:4317"
+      traces_host: "otel-collector-opentelemetry-collector.monitoring.svc.cluster.local"
+      app_url: "http://app.tns.svc.cluster.local"
