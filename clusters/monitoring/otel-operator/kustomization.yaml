@@ -5,4 +5,4 @@ resources:
   - cm-repository.yaml
   - cm-release.yaml
   - repository.yaml
-  - release.yaml
+  # - release.yaml
