@@ -38,7 +38,8 @@ spec:
       sourceRef:
         kind: HelmRepository
         name: open-telemetry
-      interval: 60m
+      version: 0.57.2
+      interval: 1m
   install:
     remediation:
       retries: 9
