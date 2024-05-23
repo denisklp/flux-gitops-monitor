@@ -1,0 +1,93 @@
+  name: SECRET-CICD
+
+  on: 
+    push:
+      branches:
+        - main
+  env:
+    REPOSITORY: mrfwdmail
+  
+  jobs:
+    ci:
+      name: ci
+      runs-on: ubuntu-latest
+      outputs:
+        base64_data: ${{ steps.decrypt.outputs.base64_data }}
+  
+      permissions:
+        contents: 'read'
+        id-token: 'write'
+        packages: write
+
+      steps:             
+  # TELE_TOKEN extract and decode from GCP secrets
+        - uses: 'google-github-actions/auth@v2'
+          with:
+            credentials_json: '${{ secrets.GCP_KEY_CREDENTIALS }}' # Replace with the name of your GitHub Actions secret
+
+        - name: Retrieve Encrypted TELE_TOKEN
+          id: decrypt
+          run: |
+            gcloud secrets versions access latest --secret=TELE_TOKEN2 --out-file=ENCRYPTED_TELE_TOKEN.bin --format='get(payload.data)' | tr '_-' '/+' | base64 -d            
+            gcloud kms decrypt --key=TELE_TOKEN --keyring=kbot2 --location=global --ciphertext-file=ENCRYPTED_TELE_TOKEN.bin --plaintext-file=TELE_TOKEN.bin
+            rm ENCRYPTED_TELE_TOKEN.bin
+            
+            # Encode data of TELE_TOKEN.bin in base64
+            data=$(cat TELE_TOKEN.bin)
+            base64_data=$(echo -n $data | base64)
+            rm TELE_TOKEN.bin
+            echo "base64_data=$base64_data" >> $GITHUB_OUTPUT
+
+        
+
+    cd:
+      name: cd
+      needs: ci
+      runs-on: ubuntu-latest
+      permissions:
+        contents: 'write'
+        id-token: 'write'
+
+      env:
+        base64_data: ${{ needs.ci.outputs.base64_data }}
+
+      steps:
+        - uses: actions/checkout@v3
+          with:
+            fetch-depth: 0 
+            
+        - uses: 'google-github-actions/auth@v2'
+          with:
+            credentials_json: '${{ secrets.GCP_KEY_CREDENTIALS }}' 
+
+        - name: encode
+          id: encode
+          run: |
+            # Read placeholder_secret.yaml and add base64 data to token field
+            cd clusters/demo
+            sed "s/token:/token: $base64_data/" placeholder_secret.yaml > unencrypted_secret.yaml
+
+            curl -LO https://github.com/getsops/sops/releases/download/v3.8.1/sops-v3.8.1.linux.amd64
+            mv sops-v3.8.1.linux.amd64 /usr/local/bin/sops
+            chmod +x /usr/local/bin/sops
+            echo "sops installed succesfully"
+
+            sops -e -gcp-kms projects/k8s-k3s-id/locations/global/keyRings/kbot2/cryptoKeys/TELE_TOKEN --encrypted-regex '^(token)$' unencrypted_secret.yaml>secret.yaml
+            
+
+        - name: Push file to github
+          env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          run: |
+            git config user.name github-actions
+            git config user.email github-actions@github.com
+            
+
+            # # Commit and push secret.yaml to GitHub
+            git add clusters/demo/secret.yaml
+            git commit -m "Update secret.yaml with base64 encoded token"
+            git push 
+
+        
+
+        
